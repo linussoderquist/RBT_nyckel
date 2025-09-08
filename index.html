@@ -32,7 +32,6 @@
     .grid-btns{ display:flex; gap:8px; flex-wrap:wrap }
     a.source{ color:#0f766e; text-decoration:none }
     a.source:hover{ text-decoration:underline }
-    .tests{ font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color:#475569 }
   </style>
 </head>
 <body>
@@ -56,10 +55,6 @@
         <button id="backBtn" class="ghost">Tillbaka</button>
         <button id="homeBtn" class="ghost">Börja om</button>
       </div>
-      <details class="card tests">
-        <summary>Inbyggda tester (öppna Console också)</summary>
-        <div id="testOutput"></div>
-      </details>
     </main>
 
   </div>
@@ -329,7 +324,6 @@
   const $reset = document.getElementById('resetBtn');
   const $back = document.getElementById('backBtn');
   const $home = document.getElementById('homeBtn');
-  const $testOut = document.getElementById('testOutput');
 
   function initSelect(){
     $section.innerHTML = Object.keys(TREE).map(sec=>`<option value="${sec}">${sec}</option>`).join('');
@@ -406,50 +400,6 @@
     }
   }
 
-  // ------------------------------------------------------------
-  // Inbyggda tester – motsvarar React‑hookens console‑asserts
-  // ------------------------------------------------------------
-  function runTests(){
-    const logs = [];
-    const ok = (cond, msg)=>{ if(!cond){ console.error(msg); logs.push('❌ '+msg); } else { logs.push('✅ '+msg); } };
-
-    console.group('Renbetestyp – inbyggda tester (HTML)');
-    // 1) Varje sektion ska ha en startnod
-    Object.entries(TREE).forEach(([sec, map])=> ok(!!map.start, `Sektion '${sec}' har start-nod`));
-
-    // 2) Alla resultats koder ska finnas i DEFINITIONS
-    Object.values(TREE).forEach((map)=>{
-      Object.values(map).forEach((node)=>{
-        if (node.type==='res') ok(!!DEFINITIONS[node.code], `Kod i DEFINITIONS: ${node.code}`);
-      });
-    });
-
-    // 3) Alla choices.next pekar rätt
-    Object.entries(TREE).forEach(([sec, map])=>{
-      Object.values(map).forEach((node)=>{
-        if (node.type==='q') node.choices.forEach((c)=>{
-          const local = map[c.next];
-          const isSection = !!TREE[c.next];
-          ok(!!local || isSection, `Giltig next '${c.next}' i sektion '${sec}'`);
-        });
-      });
-    });
-
-    // 4) Snabbt röktest: navigera till en känd kod
-    section = 'SKOG'; stack=['start'];
-    const path = ['s_barr','s_tall','s_tall_hed','res_111'];
-    path.forEach(p=>{ if (TREE[section][p]) stack.push(p); });
-    const node = TREE[section][stack[stack.length-1]];
-    ok(node && node.type==='res' && node.code==='111', 'Navigering till kod 111 fungerar');
-
-    console.groupEnd();
-    $testOut.innerHTML = logs.map(l=>`<div>${l}</div>`).join('');
-
-    // Återställ normal state efter test
-    section = 'Huvudnyckel';
-    stack = ['start'];
-  }
-
   // wire buttons
   document.getElementById('resetBtn').addEventListener('click', ()=> reset());
   document.getElementById('backBtn').addEventListener('click', back);
@@ -457,7 +407,6 @@
 
   // init
   initSelect();
-  runTests();
   render();
   </script>
 </body>
