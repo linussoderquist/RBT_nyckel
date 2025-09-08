@@ -1,423 +1,464 @@
-import React, { useEffect, useMemo, useState } from "react";
-
-// React-fix: Den tidigare filen innehöll ett helt HTML-dokument (<!DOCTYPE ...>)
-// och canvasen försökte tolka den som TSX -> SyntaxError vid rad 1.
-// Den här versionen exporterar en riktig React-komponent utan TypeScript-typer.
-// Styling körs med Tailwind-klasser (ingen extra setup i canvasen).
-
-// ------------------------------------------------------------
-// Data
-// ------------------------------------------------------------
-const DEFINITIONS = {
-  // Barrskogar
-  "111": { title: "Tallhedskog – Lavtyp (>50%)", betesvarde: "Vinterbete, mycket god", group: "Barrskog" },
-  "112": { title: "Tallhedskog – Lavrik typ (25–50%)", betesvarde: "Vinterbete, mycket god", group: "Barrskog" },
-  "113": { title: "Tallskog – Lavtyp (>50%)", betesvarde: "Vinterbete, mycket god", group: "Barrskog" },
-  "114": { title: "Tallskog – Lavrik typ (25–50%)", betesvarde: "Vinterbete, mycket god", group: "Barrskog" },
-  "115": { title: "Lavristyp (tallskog)", betesvarde: "Vinterbete, mycket god", group: "Barrskog" },
-  "103": { title: "Tallskog – Mossrik, blåbär & lingontyp", betesvarde: "Vinterbete, god", group: "Barrskog" },
-  "104": { title: "Tallskog – Gammal med hänglav", group: "Barrskog" },
-  "105": { title: "Granskog – Örtrik typ", group: "Barrskog" },
-  "106": { title: "Granskog – Mossrik typ", group: "Barrskog" },
-  "107": { title: "Granskog – Gammal med hänglav", group: "Barrskog" },
-  "108": { title: "Contortatallskog", group: "Barrskog" },
-  "109": { title: "Blandskog (gran, tall, björk)", group: "Barrskog" },
-  "110": { title: "Granskog med marklav (≥25%)", group: "Barrskog" },
-  // Fjäll – lövskog
-  "201": { title: "Lavrik fjällbjörkskog", group: "Fjäll – lövskog" },
-  "202": { title: "Mossrik fjällbjörkskog – Kråkris/lingontyp", group: "Fjäll – lövskog" },
-  "203": { title: "Mossrik fjällbjörkskog – Blåbärstyp", group: "Fjäll – lövskog" },
-  "204": { title: "Örtrik fjällbjörkskog (ängsbjörkskog)", group: "Fjäll – lövskog" },
-  "206": { title: "Buskmark/vide (längs jokkar, myrar, delta m.m.)", group: "Övriga marker" },
-  "207": { title: "Övrig lövskog i fjällen (al, sälg m.m.)", group: "Fjäll – lövskog" },
-  "208": { title: "Övriga lövskogar (nedanför fjällbjörkskogen)", group: "Lövskog" },
-  // Myr
-  "501": { title: "Blöt mager myr", group: "Myr" },
-  "502": { title: "Torr mager myr", group: "Myr" },
-  "503": { title: "Blöt frodig myr", group: "Myr" },
-  "504": { title: "Torr frodig myr", group: "Myr" },
-  "505": { title: "Ristuvmyr – lav på tuvor (20–30%)", group: "Myr" },
-  "506": { title: "Skogklädd myr (≥10% krontäckning)", group: "Myr" },
-  // Fjäll
-  "601": { title: "Skarp/torr rished – lite lav (<25%)", group: "Fjäll – hed" },
-  "602": { title: "Lavhed (lavdominerad >25%)", group: "Fjäll – hed" },
-  "603": { title: "Frisk rished", group: "Fjäll – hed" },
-  "604": { title: "Blöt/våt rished (tuvig, ofta vide)", group: "Fjäll – hed" },
-  "605": { title: "Gräshed", group: "Fjäll – gräs/äng" },
-  "606": { title: "Örtäng (inkl. vissa snölegor)", group: "Fjäll – gräs/äng" },
-  "607": { title: "Snölega (tinar fram varje år)", group: "Fjäll – snö" },
-  "608": { title: "Extrem snölega (tinar ej varje år)", group: "Fjäll – snö" },
-  "609": { title: "Buskmark (vide med inslag av låg björk)", group: "Fjäll – busk" },
-  "610": { title: "Substratmark fjäll (häll/block/sten dominerar)", group: "Fjäll – substrat" },
-  "611": { title: "Glaciär eller permanent snö", group: "Fjäll – snö" },
-  "612": { title: "Trädfritt klimatimpediment (nedanför alpina regionen)", group: "Övriga marker" },
-  // Kalhyggen/övrigt
-  "301": { title: "Kalhygge (markberett, blottad mineraljord)", group: "Kalhyggen" },
-  "302": { title: "Kalhygge med sia (krus- eller tuvtåtel)", group: "Kalhyggen" },
-  "303": { title: "Kalhygge med lav", group: "Kalhyggen" },
-  "304": { title: "Igenväxande föryngringsmark (lövsly/buskar/gräs/örter)", group: "Kalhyggen" },
-  "401": { title: "Berg i dagen (nedanför alpina regionen)", group: "Övriga marker" },
-  "402": { title: "Block- och hällmark", group: "Övriga marker" },
-  "700": { title: "Vatten", group: "Övriga marker" },
-  "801": { title: "Bebyggelse och exploaterad mark", group: "Övriga marker" },
-  "802": { title: "Vägar och grustäkter", group: "Övriga marker" },
-  "803": { title: "Inägor (kulturmark/äng)", group: "Övriga marker" },
-};
-
-// Nodträd – samma struktur som tidigare React-version, men helt utan TS-typer
-const TREE = {
-  Huvudnyckel: {
-    start: { type: "q", id: "start", text: "Krontäckning?", choices: [
-      { label: "Skogklädda marker (≥10%)", next: "h2" },
-      { label: "Öppna marker (<10%)", next: "h4" },
-    ] },
-    h2: { type: "q", id: "h2", text: "Underlag i skog?", choices: [
-      { label: "Torvmark", next: "MYR" },
-      { label: "Mineraljord", next: "h3" },
-    ] },
-    h3: { type: "q", id: "h3", text: "Huvudträdslagets medelhöjd?", choices: [
-      { label: "> 1,3 m (skog)", next: "SKOG" },
-      { label: "< 1,3 m (plantskog/kalavverkad)", next: "KAL" },
-    ] },
-    h4: { type: "q", id: "h4", text: "Öppna marker – var?", choices: [
-      { label: "Torvmark", next: "MYR" },
-      { label: "Fastmark/mineraljord (alpin region)", next: "FJALL" },
-      { label: "Fastmark/mineraljord (nedanför alpin)", next: "OVR" },
-      { label: "Bebyggelse m.m.", next: "OVR" },
-    ] },
-  },
-  MYR: {
-    start: { type: "q", id: "start", text: "Myr – krontäckning?", choices: [
-      { label: "≥10%", next: "m_skogkladd" },
-      { label: "<10%", next: "m2" },
-    ] },
-    m_skogkladd: { type: "res", id: "m_skogkladd", code: "506" },
-    m2: { type: "q", id: "m2", text: "Blötgrad & fältskikt", choices: [
-      { label: "Blöt myr – lösbotten, blöta mjuk-/fastmattor, ofta vattentäckt", next: "m3" },
-      { label: "Domineras av mjuk-/fastmattor (ev. lite lösbotten)", next: "m4" },
-      { label: "Ristuvmyr med lav på tuvor (20–30% av ytan)", next: "m_ristuv" },
-    ] },
-    m_ristuv: { type: "res", id: "m_ristuv", code: "505" },
-    m3: { type: "q", id: "m3", text: "Fältskikt i blöt myr?", choices: [
-      { label: "Glest fältskikt (mager)", next: "m_blot_mager" },
-      { label: "Frodigt fältskikt", next: "m_blot_frodig" },
-    ] },
-    m_blot_mager: { type: "res", id: "m_blot_mager", code: "501" },
-    m_blot_frodig: { type: "res", id: "m_blot_frodig", code: "503" },
-    m4: { type: "q", id: "m4", text: "Fältskikt (torr del)", choices: [
-      { label: "Halvgräs/starr dominerar (inkl. ristuvmyrar)", next: "m_torr_mager" },
-      { label: "Starr- & gräsrikt, ofta med örter (inkl. dvärgbjörk)", next: "m_torr_frodig" },
-    ] },
-    m_torr_mager: { type: "res", id: "m_torr_mager", code: "502" },
-    m_torr_frodig: { type: "res", id: "m_torr_frodig", code: "504" },
-  },
-  FJALL: {
-    start: { type: "q", id: "start", text: "Fjäll – övergripande typ?", choices: [
-      { label: "Ris & dvärgbjörk dominerar", next: "f_ris" },
-      { label: "Gräs/örter dominerar", next: "f_grasort" },
-      { label: "Snölegor", next: "f_sno" },
-      { label: "Buskdominerad (vide + låg björk)", next: "f_busk" },
-      { label: "Substratdominerad mark/berg i dagen (högalpint)", next: "f_sub" },
-      { label: "Glaciär/permanent snö", next: "f_glaciar" },
-    ] },
-    f_busk: { type: "res", id: "f_busk", code: "609" },
-    f_sub: { type: "res", id: "f_sub", code: "610" },
-    f_glaciar: { type: "res", id: "f_glaciar", code: "611" },
-    f_ris: { type: "q", id: "f_ris", text: "Lav i bottenskiktet?", choices: [
-      { label: "Lavar <25% (lite lav)", next: "f_601" },
-      { label: "Lavdominerad/lavrik (>25%)", next: "f_602" },
-      { label: "Hög dvärgbjörk, tätare fält-/buskskikt", next: "f_603_604" },
-    ] },
-    f_601: { type: "res", id: "f_601", code: "601" },
-    f_602: { type: "res", id: "f_602", code: "602" },
-    f_603_604: { type: "q", id: "f_603_604", text: "Markfukt / tuvor?", choices: [
-      { label: "Frisk rished (ej tuvig)", next: "f_603" },
-      { label: "Tuvig, ofta små myrar/kärr och mycket vide", next: "f_604" },
-    ] },
-    f_603: { type: "res", id: "f_603", code: "603" },
-    f_604: { type: "res", id: "f_604", code: "604" },
-    f_grasort: { type: "q", id: "f_grasort", text: "Gles gräshed eller örtrik?", choices: [
-      { label: "Gles gräshed (styvstarr/klynnetåg; kan övergå i äng)", next: "f_605" },
-      { label: "Örtrik (gräs- & örtdominerad; ibland vide)", next: "f_606" },
-    ] },
-    f_605: { type: "res", id: "f_605", code: "605" },
-    f_606: { type: "res", id: "f_606", code: "606" },
-    f_sno: { type: "q", id: "f_sno", text: "Snölega – hur ofta tinar det fram?", choices: [
-      { label: "Tinar fram varje år (dvärgvide karaktärsart)", next: "f_607" },
-      { label: "Tinar ej varje år – mest mossor/sten/grus", next: "f_608" },
-    ] },
-    f_607: { type: "res", id: "f_607", code: "607" },
-    f_608: { type: "res", id: "f_608", code: "608" },
-  },
-  SKOG: {
-    start: { type: "q", id: "start", text: "Skog – trädslagsdominans?", choices: [
-      { label: "Barrträd dominerar (>65%)", next: "s_barr" },
-      { label: "Ej barrdominans (≤65% barr)", next: "s_ej_barr" },
-      { label: "Hygge/plantskog (<1,3 m)", next: "KAL" },
-    ] },
-    s_barr: { type: "q", id: "s_barr", text: "Barr – vilken?", choices: [
-      { label: "Tall dominerar (>65%)", next: "s_tall" },
-      { label: "Gran dominerar (>65%)", next: "s_gran" },
-      { label: "Contorta (plantering)", next: "s_contorta" },
-    ] },
-    s_contorta: { type: "res", id: "s_contorta", code: "108" },
-    s_tall: { type: "q", id: "s_tall", text: "Tallskog – lavtäckning/hed?", choices: [
-      { label: "Hed med lav ≥25%", next: "s_tall_hed" },
-      { label: "Ej hed – lav ≥25%", next: "s_tall_ejhed" },
-      { label: "Lav 10–25% (lavristyp)", next: "s_tall_lavris" },
-      { label: "Lav <10% – mossrik (ofta ris/gras i fältskikt)", next: "s_tall_mossrik" },
-    ] },
-    s_tall_hed: { type: "q", id: "s_tall_hed", text: "Hed – hur lavrik?", choices: [
-      { label: ">50% lav (lavtyp)", next: "res_111" },
-      { label: "25–50% lav (lavrik typ)", next: "res_112" },
-    ] },
-    res_111: { type: "res", id: "res_111", code: "111" },
-    res_112: { type: "res", id: "res_112", code: "112" },
-    s_tall_ejhed: { type: "q", id: "s_tall_ejhed", text: "Ej hed – hur lavrik?", choices: [
-      { label: ">50% lav (lavtyp)", next: "res_113" },
-      { label: "25–50% lav (lavrik typ)", next: "res_114" },
-    ] },
-    res_113: { type: "res", id: "res_113", code: "113" },
-    res_114: { type: "res", id: "res_114", code: "114" },
-    s_tall_lavris: { type: "res", id: "s_tall_lavris", code: "115" },
-    s_tall_mossrik: { type: "q", id: "s_tall_mossrik", text: "Hänglavar?", choices: [
-      { label: "Utan (enstaka kan finnas)", next: "res_103" },
-      { label: "Med hänglavar (mer än enstaka)", next: "res_104" },
-    ] },
-    res_103: { type: "res", id: "res_103", code: "103" },
-    res_104: { type: "res", id: "res_104", code: "104" },
-    s_gran: { type: "q", id: "s_gran", text: "Granskog – lav i bottenskikt?", choices: [
-      { label: "Lav <25% (moss-/örtrik)", next: "s_gran_moss_ort" },
-      { label: "Lav ≥25%", next: "res_110" },
-    ] },
-    res_110: { type: "res", id: "res_110", code: "110" },
-    s_gran_moss_ort: { type: "q", id: "s_gran_moss_ort", text: "Fältskikt mest örter/gräs/ormbunkar eller ris?", choices: [
-      { label: "Örtrikt", next: "res_105" },
-      { label: "Mossrikt (ofta ris)", next: "res_106" },
-    ] },
-    res_105: { type: "res", id: "res_105", code: "105" },
-    res_106: { type: "res", id: "res_106", code: "106" },
-    s_ej_barr: { type: "q", id: "s_ej_barr", text: "Löv/blandskog?", choices: [
-      { label: "Löv dominerar (>65%)", next: "s_lov" },
-      { label: "Blandskog (gran/tall/björk)", next: "res_109" },
-    ] },
-    res_109: { type: "res", id: "res_109", code: "109" },
-    s_lov: { type: "q", id: "s_lov", text: "Fjällbjörkskogs-bälte?", choices: [
-      { label: "Ja – fjällbjörkskog", next: "s_fjallbjork" },
-      { label: "Nej – övriga lövskogar", next: "res_208" },
-    ] },
-    res_208: { type: "res", id: "res_208", code: "208" },
-    s_fjallbjork: { type: "q", id: "s_fjallbjork", text: "Fjällbjörkskog – bottenskikt/fältskikt?", choices: [
-      { label: "Lavrik, ofta låg krontäckning/hed", next: "res_201" },
-      { label: "Mossrik (kråkris/lingon)", next: "res_202" },
-      { label: "Mossrik (blåbärstyp)", next: "res_203" },
-      { label: "Örtrik (ängsbjörkskog)", next: "res_204" },
-      { label: "Andra lövträd dominerar i fjällbjörkskogsbältet", next: "res_207" },
-    ] },
-    res_201: { type: "res", id: "res_201", code: "201" },
-    res_202: { type: "res", id: "res_202", code: "202" },
-    res_203: { type: "res", id: "res_203", code: "203" },
-    res_204: { type: "res", id: "res_204", code: "204" },
-    res_207: { type: "res", id: "res_207", code: "207" },
-  },
-  KAL: {
-    start: { type: "q", id: "start", text: "Kalavverkad skog / plantskog", choices: [
-      { label: "Markberett kalhygge – blottad mineraljord, utan påtaglig vegetation", next: "res_301" },
-      { label: "Vegetation finns", next: "k2" },
-    ] },
-    res_301: { type: "res", id: "res_301", code: "301" },
-    k2: { type: "q", id: "k2", text: "Vilken vegetation?", choices: [
-      { label: "Lav dominerar", next: "res_303" },
-      { label: "Frodig – med sia (krus-/tuvtåtel)", next: "res_302" },
-      { label: "Igenväxande föryngringsmark (lövsly/buskar/gräs/örter)", next: "res_304" },
-    ] },
-    res_302: { type: "res", id: "res_302", code: "302" },
-    res_303: { type: "res", id: "res_303", code: "303" },
-    res_304: { type: "res", id: "res_304", code: "304" },
-  },
-  OVR: {
-    start: { type: "q", id: "start", text: "Övriga marker – miljö?", choices: [
-      { label: "Bebyggelse / exploaterad mark / vägar / grustäkter / inägor", next: "o_bebygg" },
-      { label: "Vatten", next: "res_700" },
-      { label: "Berg i dagen / block & hällmark", next: "o_berg" },
-      { label: "Buskmark/vide (jokkar, myrar, delta)", next: "res_206" },
-      { label: "Trädfritt klimatimpediment", next: "res_612" },
-    ] },
-    o_bebygg: { type: "q", id: "o_bebygg", text: "Vilken typ?", choices: [
-      { label: "Bebyggelse & exploaterad mark", next: "res_801" },
-      { label: "Vägar & grustäkter", next: "res_802" },
-      { label: "Inägor (kulturmark/äng)", next: "res_803" },
-    ] },
-    o_berg: { type: "q", id: "o_berg", text: "Berg/block?", choices: [
-      { label: "Berg i dagen", next: "res_401" },
-      { label: "Block- & hällmark", next: "res_402" },
-    ] },
-    res_206: { type: "res", id: "res_206", code: "206" },
-    res_612: { type: "res", id: "res_612", code: "612" },
-    res_700: { type: "res", id: "res_700", code: "700" },
-    res_401: { type: "res", id: "res_401", code: "401" },
-    res_402: { type: "res", id: "res_402", code: "402" },
-    res_801: { type: "res", id: "res_801", code: "801" },
-    res_802: { type: "res", id: "res_802", code: "802" },
-    res_803: { type: "res", id: "res_803", code: "803" },
-  },
-};
-
-// ------------------------------------------------------------
-// Hjälpkomponenter
-// ------------------------------------------------------------
-function ResultCard({ code }) {
-  const def = DEFINITIONS[code] || { title: "Okänd kod" };
-  return (
-    <div className="rounded-2xl border p-4 shadow-sm bg-white">
-      <div className="text-sm uppercase tracking-wide text-gray-500">Kod</div>
-      <div className="text-3xl font-semibold mb-1">{code}</div>
-      <div className="text-lg font-medium">{def.title}</div>
-      {def.group && <div className="mt-1 text-gray-600">Grupp: {def.group}</div>}
-      {def.betesvarde && <div className="mt-1 text-gray-600">Betesvärde: {def.betesvarde}</div>}
-    </div>
-  );
-}
-
-function Step({ node, onChoose }) {
-  return (
-    <div className="rounded-2xl border p-5 bg-white shadow-sm">
-      <div className="text-sm text-gray-500 mb-1">Fråga</div>
-      <h2 className="text-xl font-semibold mb-4">{node.text}</h2>
-      <div className="grid sm:grid-cols-2 gap-3">
-        {node.choices.map((c, idx) => (
-          <button
-            key={idx}
-            onClick={() => onChoose(c.next)}
-            className="px-4 py-3 rounded-xl border hover:shadow transition text-left bg-white"
-          >
-            <span className="font-medium">{c.label}</span>
-          </button>
-        ))}
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bestämningsnyckel – Renbetestyp</title>
+  <meta name="description" content="Interaktiv bestämningsnyckel för renbetestyper" />
+  <style>
+    :root{ --bg:#f7f7fb; --card:#fff; --ink:#111; --muted:#667085; --line:#e6e6ef; --radius:16px; --ring:#86efac; }
+    *{ box-sizing:border-box }
+    html,body{ height:100% }
+    body{ margin:0; font:16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:var(--ink); background:var(--bg); }
+    .wrap{ max-width:1000px; margin:0 auto; padding:24px }
+    header{ display:flex; gap:16px; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap }
+    h1{ font-size:clamp(20px,2.4vw,28px); margin:0 }
+    .muted{ color:var(--muted) }
+    .row{ display:flex; gap:8px; flex-wrap:wrap }
+    select,button{ border:1px solid var(--line); background:var(--card); padding:10px 12px; border-radius:12px; font:inherit; cursor:pointer }
+    button:hover, select:hover{ box-shadow:0 1px 0 rgba(0,0,0,.04) }
+    button.ghost{ background:var(--card) }
+    main{ display:grid; gap:16px }
+    .crumbs{ display:flex; gap:6px; flex-wrap:wrap; color:var(--muted); font-size:14px; margin:8px 0 4px }
+    .crumb{ background:var(--card); border:1px solid var(--line); padding:4px 8px; border-radius:999px }
+    .card{ background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:18px }
+    .qtitle{ font-weight:700; font-size:20px; margin:0 0 12px }
+    .choices{ display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px }
+    .choice{ border:1px solid var(--line); border-radius:12px; padding:12px; text-align:left; background:var(--card) }
+    .choice:hover{ outline:3px solid var(--ring); border-color:transparent }
+    .kicker{ font-size:12px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted) }
+    .big{ font-size:32px; font-weight:800; margin:2px 0 }
+    footer{ margin:24px 0; color:var(--muted); font-size:13px }
+    .grid-btns{ display:flex; gap:8px; flex-wrap:wrap }
+    a.source{ color:#0f766e; text-decoration:none }
+    a.source:hover{ text-decoration:underline }
+    .tests{ font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color:#475569 }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Bestämningsnyckel – Renbetestyp</h1>
+        <a class="source" href="https://sametinget.se/6530" target="_blank" rel="noreferrer noopener">Källa: Sametinget, RBP renbetestyper (2017)</a>
       </div>
-    </div>
-  );
-}
+      <div class="row">
+        <select id="sectionSelect" title="Välj delnyckel"></select>
+        <button id="resetBtn" class="ghost">Återställ</button>
+      </div>
+    </header>
 
-// ------------------------------------------------------------
-// Huvudapp
-// ------------------------------------------------------------
-export default function App() {
-  const [section, setSection] = useState("Huvudnyckel");
-  const [stack, setStack] = useState(["start"]);
+    <nav class="crumbs" id="crumbs"></nav>
 
-  const nodes = TREE[section];
-  const current = nodes[stack[stack.length - 1]];
+    <main>
+      <div id="content"></div>
+      <div class="grid-btns">
+        <button id="backBtn" class="ghost">Tillbaka</button>
+        <button id="homeBtn" class="ghost">Börja om</button>
+      </div>
+      <details class="card tests">
+        <summary>Inbyggda tester (öppna Console också)</summary>
+        <div id="testOutput"></div>
+      </details>
+    </main>
 
-  function reset(to) {
-    const sec = to || section;
-    setSection(sec);
-    setStack(["start"]);
+  </div>
+
+  <script>
+  // ------------------------------------------------------------
+  // Data (samma som i React-versionen)
+  // ------------------------------------------------------------
+  const DEFINITIONS = {
+    "111": { title: "Tallhedskog – Lavtyp (>50%)", betesvarde: "Vinterbete, mycket god", group: "Barrskog" },
+    "112": { title: "Tallhedskog – Lavrik typ (25–50%)", betesvarde: "Vinterbete, mycket god", group: "Barrskog" },
+    "113": { title: "Tallskog – Lavtyp (>50%)", betesvarde: "Vinterbete, mycket god", group: "Barrskog" },
+    "114": { title: "Tallskog – Lavrik typ (25–50%)", betesvarde: "Vinterbete, mycket god", group: "Barrskog" },
+    "115": { title: "Lavristyp (tallskog)", betesvarde: "Vinterbete, mycket god", group: "Barrskog" },
+    "103": { title: "Tallskog – Mossrik, blåbär & lingontyp", betesvarde: "Vinterbete, god", group: "Barrskog" },
+    "104": { title: "Tallskog – Gammal med hänglav", group: "Barrskog" },
+    "105": { title: "Granskog – Örtrik typ", group: "Barrskog" },
+    "106": { title: "Granskog – Mossrik typ", group: "Barrskog" },
+    "107": { title: "Granskog – Gammal med hänglav", group: "Barrskog" },
+    "108": { title: "Contortatallskog", group: "Barrskog" },
+    "109": { title: "Blandskog (gran, tall, björk)", group: "Barrskog" },
+    "110": { title: "Granskog med marklav (≥25%)", group: "Barrskog" },
+    "201": { title: "Lavrik fjällbjörkskog", group: "Fjäll – lövskog" },
+    "202": { title: "Mossrik fjällbjörkskog – Kråkris/lingontyp", group: "Fjäll – lövskog" },
+    "203": { title: "Mossrik fjällbjörkskog – Blåbärstyp", group: "Fjäll – lövskog" },
+    "204": { title: "Örtrik fjällbjörkskog (ängsbjörkskog)", group: "Fjäll – lövskog" },
+    "206": { title: "Buskmark/vide (längs jokkar, myrar, delta m.m.)", group: "Övriga marker" },
+    "207": { title: "Övrig lövskog i fjällen (al, sälg m.m.)", group: "Fjäll – lövskog" },
+    "208": { title: "Övriga lövskogar (nedanför fjällbjörkskogen)", group: "Lövskog" },
+    "501": { title: "Blöt mager myr", group: "Myr" },
+    "502": { title: "Torr mager myr", group: "Myr" },
+    "503": { title: "Blöt frodig myr", group: "Myr" },
+    "504": { title: "Torr frodig myr", group: "Myr" },
+    "505": { title: "Ristuvmyr – lav på tuvor (20–30%)", group: "Myr" },
+    "506": { title: "Skogklädd myr (≥10% krontäckning)", group: "Myr" },
+    "601": { title: "Skarp/torr rished – lite lav (<25%)", group: "Fjäll – hed" },
+    "602": { title: "Lavhed (lavdominerad >25%)", group: "Fjäll – hed" },
+    "603": { title: "Frisk rished", group: "Fjäll – hed" },
+    "604": { title: "Blöt/våt rished (tuvig, ofta vide)", group: "Fjäll – hed" },
+    "605": { title: "Gräshed", group: "Fjäll – gräs/äng" },
+    "606": { title: "Örtäng (inkl. vissa snölegor)", group: "Fjäll – gräs/äng" },
+    "607": { title: "Snölega (tinar fram varje år)", group: "Fjäll – snö" },
+    "608": { title: "Extrem snölega (tinar ej varje år)", group: "Fjäll – snö" },
+    "609": { title: "Buskmark (vide med inslag av låg björk)", group: "Fjäll – busk" },
+    "610": { title: "Substratmark fjäll (häll/block/sten dominerar)", group: "Fjäll – substrat" },
+    "611": { title: "Glaciär eller permanent snö", group: "Fjäll – snö" },
+    "612": { title: "Trädfritt klimatimpediment (nedanför alpina regionen)", group: "Övriga marker" },
+    "301": { title: "Kalhygge (markberett, blottad mineraljord)", group: "Kalhyggen" },
+    "302": { title: "Kalhygge med sia (krus- eller tuvtåtel)", group: "Kalhyggen" },
+    "303": { title: "Kalhygge med lav", group: "Kalhyggen" },
+    "304": { title: "Igenväxande föryngringsmark (lövsly/buskar/gräs/örter)", group: "Kalhyggen" },
+    "401": { title: "Berg i dagen (nedanför alpina regionen)", group: "Övriga marker" },
+    "402": { title: "Block- och hällmark", group: "Övriga marker" },
+    "700": { title: "Vatten", group: "Övriga marker" },
+    "801": { title: "Bebyggelse och exploaterad mark", group: "Övriga marker" },
+    "802": { title: "Vägar och grustäkter", group: "Övriga marker" },
+    "803": { title: "Inägor (kulturmark/äng)", group: "Övriga marker" },
+  };
+
+  const TREE = {
+    Huvudnyckel: {
+      start: { type: 'q', id: 'start', text: 'Krontäckning?', choices: [
+        { label: 'Skogklädda marker (≥10%)', next: 'h2' },
+        { label: 'Öppna marker (<10%)', next: 'h4' },
+      ] },
+      h2: { type: 'q', id: 'h2', text: 'Underlag i skog?', choices: [
+        { label: 'Torvmark', next: 'MYR' },
+        { label: 'Mineraljord', next: 'h3' },
+      ] },
+      h3: { type: 'q', id: 'h3', text: 'Huvudträdslagets medelhöjd?', choices: [
+        { label: '> 1,3 m (skog)', next: 'SKOG' },
+        { label: '< 1,3 m (plantskog/kalavverkad)', next: 'KAL' },
+      ] },
+      h4: { type: 'q', id: 'h4', text: 'Öppna marker – var?', choices: [
+        { label: 'Torvmark', next: 'MYR' },
+        { label: 'Fastmark/mineraljord (alpin region)', next: 'FJALL' },
+        { label: 'Fastmark/mineraljord (nedanför alpin)', next: 'OVR' },
+        { label: 'Bebyggelse m.m.', next: 'OVR' },
+      ] },
+    },
+    MYR: {
+      start: { type: 'q', id: 'start', text: 'Myr – krontäckning?', choices: [
+        { label: '≥10%', next: 'm_skogkladd' },
+        { label: '<10%', next: 'm2' },
+      ] },
+      m_skogkladd: { type: 'res', id: 'm_skogkladd', code: '506' },
+      m2: { type: 'q', id: 'm2', text: 'Blötgrad & fältskikt', choices: [
+        { label: 'Blöt myr – lösbotten, blöta mjuk-/fastmattor, ofta vattentäckt', next: 'm3' },
+        { label: 'Domineras av mjuk-/fastmattor (ev. lite lösbotten)', next: 'm4' },
+        { label: 'Ristuvmyr med lav på tuvor (20–30% av ytan)', next: 'm_ristuv' },
+      ] },
+      m_ristuv: { type: 'res', id: 'm_ristuv', code: '505' },
+      m3: { type: 'q', id: 'm3', text: 'Fältskikt i blöt myr?', choices: [
+        { label: 'Glest fältskikt (mager)', next: 'm_blot_mager' },
+        { label: 'Frodigt fältskikt', next: 'm_blot_frodig' },
+      ] },
+      m_blot_mager: { type: 'res', id: 'm_blot_mager', code: '501' },
+      m_blot_frodig: { type: 'res', id: 'm_blot_frodig', code: '503' },
+      m4: { type: 'q', id: 'm4', text: 'Fältskikt (torr del)', choices: [
+        { label: 'Halvgräs/starr dominerar (inkl. ristuvmyrar)', next: 'm_torr_mager' },
+        { label: 'Starr- & gräsrikt, ofta med örter (inkl. dvärgbjörk)', next: 'm_torr_frodig' },
+      ] },
+      m_torr_mager: { type: 'res', id: 'm_torr_mager', code: '502' },
+      m_torr_frodig: { type: 'res', id: 'm_torr_frodig', code: '504' },
+    },
+    FJALL: {
+      start: { type: 'q', id: 'start', text: 'Fjäll – övergripande typ?', choices: [
+        { label: 'Ris & dvärgbjörk dominerar', next: 'f_ris' },
+        { label: 'Gräs/örter dominerar', next: 'f_grasort' },
+        { label: 'Snölegor', next: 'f_sno' },
+        { label: 'Buskdominerad (vide + låg björk)', next: 'f_busk' },
+        { label: 'Substratdominerad mark/berg i dagen (högalpint)', next: 'f_sub' },
+        { label: 'Glaciär/permanent snö', next: 'f_glaciar' },
+      ] },
+      f_busk: { type: 'res', id: 'f_busk', code: '609' },
+      f_sub: { type: 'res', id: 'f_sub', code: '610' },
+      f_glaciar: { type: 'res', id: 'f_glaciar', code: '611' },
+      f_ris: { type: 'q', id: 'f_ris', text: 'Lav i bottenskiktet?', choices: [
+        { label: 'Lavar <25% (lite lav)', next: 'f_601' },
+        { label: 'Lavdominerad/lavrik (>25%)', next: 'f_602' },
+        { label: 'Hög dvärgbjörk, tätare fält-/buskskikt', next: 'f_603_604' },
+      ] },
+      f_601: { type: 'res', id: 'f_601', code: '601' },
+      f_602: { type: 'res', id: 'f_602', code: '602' },
+      f_603_604: { type: 'q', id: 'f_603_604', text: 'Markfukt / tuvor?', choices: [
+        { label: 'Frisk rished (ej tuvig)', next: 'f_603' },
+        { label: 'Tuvig, ofta små myrar/kärr och mycket vide', next: 'f_604' },
+      ] },
+      f_603: { type: 'res', id: 'f_603', code: '603' },
+      f_604: { type: 'res', id: 'f_604', code: '604' },
+      f_grasort: { type: 'q', id: 'f_grasort', text: 'Gles gräshed eller örtrik?', choices: [
+        { label: 'Gles gräshed (styvstarr/klynnetåg; kan övergå i äng)', next: 'f_605' },
+        { label: 'Örtrik (gräs- & örtdominerad; ibland vide)', next: 'f_606' },
+      ] },
+      f_605: { type: 'res', id: 'f_605', code: '605' },
+      f_606: { type: 'res', id: 'f_606', code: '606' },
+      f_sno: { type: 'q', id: 'f_sno', text: 'Snölega – hur ofta tinar det fram?', choices: [
+        { label: 'Tinar fram varje år (dvärgvide karaktärsart)', next: 'f_607' },
+        { label: 'Tinar ej varje år – mest mossor/sten/grus', next: 'f_608' },
+      ] },
+      f_607: { type: 'res', id: 'f_607', code: '607' },
+      f_608: { type: 'res', id: 'f_608', code: '608' },
+    },
+    SKOG: {
+      start: { type: 'q', id: 'start', text: 'Skog – trädslagsdominans?', choices: [
+        { label: 'Barrträd dominerar (>65%)', next: 's_barr' },
+        { label: 'Ej barrdominans (≤65% barr)', next: 's_ej_barr' },
+        { label: 'Hygge/plantskog (<1,3 m)', next: 'KAL' },
+      ] },
+      s_barr: { type: 'q', id: 's_barr', text: 'Barr – vilken?', choices: [
+        { label: 'Tall dominerar (>65%)', next: 's_tall' },
+        { label: 'Gran dominerar (>65%)', next: 's_gran' },
+        { label: 'Contorta (plantering)', next: 's_contorta' },
+      ] },
+      s_contorta: { type: 'res', id: 's_contorta', code: '108' },
+      s_tall: { type: 'q', id: 's_tall', text: 'Tallskog – lavtäckning/hed?', choices: [
+        { label: 'Hed med lav ≥25%', next: 's_tall_hed' },
+        { label: 'Ej hed – lav ≥25%', next: 's_tall_ejhed' },
+        { label: 'Lav 10–25% (lavristyp)', next: 's_tall_lavris' },
+        { label: 'Lav <10% – mossrik (ofta ris/gras i fältskikt)', next: 's_tall_mossrik' },
+      ] },
+      s_tall_hed: { type: 'q', id: 's_tall_hed', text: 'Hed – hur lavrik?', choices: [
+        { label: '>50% lav (lavtyp)', next: 'res_111' },
+        { label: '25–50% lav (lavrik typ)', next: 'res_112' },
+      ] },
+      res_111: { type: 'res', id: 'res_111', code: '111' },
+      res_112: { type: 'res', id: 'res_112', code: '112' },
+      s_tall_ejhed: { type: 'q', id: 's_tall_ejhed', text: 'Ej hed – hur lavrik?', choices: [
+        { label: '>50% lav (lavtyp)', next: 'res_113' },
+        { label: '25–50% lav (lavrik typ)', next: 'res_114' },
+      ] },
+      res_113: { type: 'res', id: 'res_113', code: '113' },
+      res_114: { type: 'res', id: 'res_114', code: '114' },
+      s_tall_lavris: { type: 'res', id: 's_tall_lavris', code: '115' },
+      s_tall_mossrik: { type: 'q', id: 's_tall_mossrik', text: 'Hänglavar?', choices: [
+        { label: 'Utan (enstaka kan finnas)', next: 'res_103' },
+        { label: 'Med hänglavar (mer än enstaka)', next: 'res_104' },
+      ] },
+      res_103: { type: 'res', id: 'res_103', code: '103' },
+      res_104: { type: 'res', id: 'res_104', code: '104' },
+      s_gran: { type: 'q', id: 's_gran', text: 'Granskog – lav i bottenskikt?', choices: [
+        { label: 'Lav <25% (moss-/örtrik)', next: 's_gran_moss_ort' },
+        { label: 'Lav ≥25%', next: 'res_110' },
+      ] },
+      res_110: { type: 'res', id: 'res_110', code: '110' },
+      s_gran_moss_ort: { type: 'q', id: 's_gran_moss_ort', text: 'Fältskikt mest örter/gräs/ormbunkar eller ris?', choices: [
+        { label: 'Örtrikt', next: 'res_105' },
+        { label: 'Mossrikt (ofta ris)', next: 'res_106' },
+      ] },
+      res_105: { type: 'res', id: 'res_105', code: '105' },
+      res_106: { type: 'res', id: 'res_106', code: '106' },
+      s_ej_barr: { type: 'q', id: 's_ej_barr', text: 'Löv/blandskog?', choices: [
+        { label: 'Löv dominerar (>65%)', next: 's_lov' },
+        { label: 'Blandskog (gran/tall/björk)', next: 'res_109' },
+      ] },
+      res_109: { type: 'res', id: 'res_109', code: '109' },
+      s_lov: { type: 'q', id: 's_lov', text: 'Fjällbjörkskogs-bälte?', choices: [
+        { label: 'Ja – fjällbjörkskog', next: 's_fjallbjork' },
+        { label: 'Nej – övriga lövskogar', next: 'res_208' },
+      ] },
+      res_208: { type: 'res', id: 'res_208', code: '208' },
+      s_fjallbjork: { type: 'q', id: 's_fjallbjork', text: 'Fjällbjörkskog – bottenskikt/fältskikt?', choices: [
+        { label: 'Lavrik, ofta låg krontäckning/hed', next: 'res_201' },
+        { label: 'Mossrik (kråkris/lingon)', next: 'res_202' },
+        { label: 'Mossrik (blåbärstyp)', next: 'res_203' },
+        { label: 'Örtrik (ängsbjörkskog)', next: 'res_204' },
+        { label: 'Andra lövträd dominerar i fjällbjörkskogsbältet', next: 'res_207' },
+      ] },
+      res_201: { type: 'res', id: 'res_201', code: '201' },
+      res_202: { type: 'res', id: 'res_202', code: '202' },
+      res_203: { type: 'res', id: 'res_203', code: '203' },
+      res_204: { type: 'res', id: 'res_204', code: '204' },
+      res_207: { type: 'res', id: 'res_207', code: '207' },
+    },
+    KAL: {
+      start: { type: 'q', id: 'start', text: 'Kalavverkad skog / plantskog', choices: [
+        { label: 'Markberett kalhygge – blottad mineraljord, utan påtaglig vegetation', next: 'res_301' },
+        { label: 'Vegetation finns', next: 'k2' },
+      ] },
+      res_301: { type: 'res', id: 'res_301', code: '301' },
+      k2: { type: 'q', id: 'k2', text: 'Vilken vegetation?', choices: [
+        { label: 'Lav dominerar', next: 'res_303' },
+        { label: 'Frodig – med sia (krus-/tuvtåtel)', next: 'res_302' },
+        { label: 'Igenväxande föryngringsmark (lövsly/buskar/gräs/örter)', next: 'res_304' },
+      ] },
+      res_302: { type: 'res', id: 'res_302', code: '302' },
+      res_303: { type: 'res', id: 'res_303', code: '303' },
+      res_304: { type: 'res', id: 'res_304', code: '304' },
+    },
+    OVR: {
+      start: { type: 'q', id: 'start', text: 'Övriga marker – miljö?', choices: [
+        { label: 'Bebyggelse / exploaterad mark / vägar / grustäkter / inägor', next: 'o_bebygg' },
+        { label: 'Vatten', next: 'res_700' },
+        { label: 'Berg i dagen / block & hällmark', next: 'o_berg' },
+        { label: 'Buskmark/vide (jokkar, myrar, delta)', next: 'res_206' },
+        { label: 'Trädfritt klimatimpediment', next: 'res_612' },
+      ] },
+      o_bebygg: { type: 'q', id: 'o_bebygg', text: 'Vilken typ?', choices: [
+        { label: 'Bebyggelse & exploaterad mark', next: 'res_801' },
+        { label: 'Vägar & grustäkter', next: 'res_802' },
+        { label: 'Inägor (kulturmark/äng)', next: 'res_803' },
+      ] },
+      o_berg: { type: 'q', id: 'o_berg', text: 'Berg/block?', choices: [
+        { label: 'Berg i dagen', next: 'res_401' },
+        { label: 'Block- & hällmark', next: 'res_402' },
+      ] },
+      res_206: { type: 'res', id: 'res_206', code: '206' },
+      res_612: { type: 'res', id: 'res_612', code: '612' },
+      res_700: { type: 'res', id: 'res_700', code: '700' },
+      res_401: { type: 'res', id: 'res_401', code: '401' },
+      res_402: { type: 'res', id: 'res_402', code: '402' },
+      res_801: { type: 'res', id: 'res_801', code: '801' },
+      res_802: { type: 'res', id: 'res_802', code: '802' },
+      res_803: { type: 'res', id: 'res_803', code: '803' },
+    },
+  };
+
+  // ------------------------------------------------------------
+  // App‑state och rendering (React‑fri)
+  // ------------------------------------------------------------
+  let section = 'Huvudnyckel';
+  let stack = ['start'];
+
+  const $section = document.getElementById('sectionSelect');
+  const $content = document.getElementById('content');
+  const $crumbs = document.getElementById('crumbs');
+  const $reset = document.getElementById('resetBtn');
+  const $back = document.getElementById('backBtn');
+  const $home = document.getElementById('homeBtn');
+  const $testOut = document.getElementById('testOutput');
+
+  function initSelect(){
+    $section.innerHTML = Object.keys(TREE).map(sec=>`<option value="${sec}">${sec}</option>`).join('');
+    $section.value = section;
+    $section.onchange = ()=> reset($section.value);
   }
 
-  function go(next) {
-    if (TREE[next]) {
-      setSection(next);
-      setStack(["start"]);
+  function reset(to){
+    section = to || section;
+    stack = ['start'];
+    $section.value = section;
+    render();
+  }
+
+  function back(){
+    if (stack.length>1){
+      stack = stack.slice(0,-1);
+      render();
+    }
+  }
+
+  function go(next){
+    if (TREE[next]){ // hoppa till annan delnyckel
+      section = next;
+      stack = ['start'];
+      $section.value = section;
+      render();
       return;
     }
-    setStack((s) => [...s, next]);
+    stack.push(next);
+    render();
   }
 
-  function back() {
-    if (stack.length > 1) setStack((s) => s.slice(0, -1));
+  const isResult = (node)=> node && node.type==='res';
+  const isQuestion = (node)=> node && node.type==='q';
+
+  function renderCrumbs(){
+    $crumbs.innerHTML = `<span class="crumb">${section}</span>` +
+      stack.map(id=>`<span class="crumb">${id}</span>`).join('');
   }
 
-  const isResult = (n) => !!n && n.type === "res";
-  const isQuestion = (n) => !!n && n.type === "q";
+  function render(){
+    renderCrumbs();
+    const nodes = TREE[section];
+    const node = nodes[stack[stack.length-1]];
 
-  // ----------------------------------------------------------
-  // Inbyggda "testfall" i konsolen för att säkra nyckeln
-  // ----------------------------------------------------------
-  useEffect(() => {
-    console.group("Renbetestyp – inbyggda tester");
+    if (isQuestion(node)){
+      $content.innerHTML = `
+        <div class="card">
+          <div class="kicker">Fråga</div>
+          <h2 class="qtitle">${node.text}</h2>
+          <div class="choices">
+            ${node.choices.map((c)=>`<button class="choice" data-next="${c.next}"><strong>${c.label}</strong></button>`).join('')}
+          </div>
+        </div>`;
+      $content.querySelectorAll('.choice').forEach(btn=>{
+        btn.addEventListener('click', (e)=>{
+          const next = e.currentTarget.getAttribute('data-next');
+          go(next);
+        });
+      });
+    } else if (isResult(node)){
+      const def = DEFINITIONS[node.code] || { title: 'Okänd kod' };
+      $content.innerHTML = `
+        <div class="card">
+          <div class="kicker">Kod</div>
+          <div class="big">${node.code}</div>
+          <div style="font-weight:700;margin:2px 0 6px">${def.title || ''}</div>
+          ${def.group ? `<div class="muted">Grupp: ${def.group}</div>`:''}
+          ${def.betesvarde ? `<div class="muted">Betesvärde: ${def.betesvarde}</div>`:''}
+        </div>`;
+    } else {
+      $content.innerHTML = `<div class="card">Kunde inte läsa noden.</div>`;
+    }
+  }
+
+  // ------------------------------------------------------------
+  // Inbyggda tester – motsvarar React‑hookens console‑asserts
+  // ------------------------------------------------------------
+  function runTests(){
+    const logs = [];
+    const ok = (cond, msg)=>{ if(!cond){ console.error(msg); logs.push('❌ '+msg); } else { logs.push('✅ '+msg); } };
+
+    console.group('Renbetestyp – inbyggda tester (HTML)');
     // 1) Varje sektion ska ha en startnod
-    Object.entries(TREE).forEach(([sec, map]) => {
-      console.assert(!!map.start, `Sektion '${sec}' saknar start-nod`);
-    });
+    Object.entries(TREE).forEach(([sec, map])=> ok(!!map.start, `Sektion '${sec}' har start-nod`));
 
     // 2) Alla resultats koder ska finnas i DEFINITIONS
-    Object.values(TREE).forEach((map) => {
-      Object.values(map).forEach((node) => {
-        if (node.type === "res") {
-          console.assert(!!DEFINITIONS[node.code], `Kod saknas i DEFINITIONS: ${node.code}`);
-        }
+    Object.values(TREE).forEach((map)=>{
+      Object.values(map).forEach((node)=>{
+        if (node.type==='res') ok(!!DEFINITIONS[node.code], `Kod i DEFINITIONS: ${node.code}`);
       });
     });
 
-    // 3) Alla choices.next ska peka på giltigt id i samma sektion eller giltig sektion
-    Object.entries(TREE).forEach(([sec, map]) => {
-      Object.values(map).forEach((node) => {
-        if (node.type === "q") {
-          node.choices.forEach((c) => {
-            const local = map[c.next];
-            const isSection = !!TREE[c.next];
-            const ok = !!local || isSection;
-            console.assert(ok, `Ogiltig next '${c.next}' i sektion '${sec}' / fråga '${node.id || node.text}'`);
-          });
-        }
+    // 3) Alla choices.next pekar rätt
+    Object.entries(TREE).forEach(([sec, map])=>{
+      Object.values(map).forEach((node)=>{
+        if (node.type==='q') node.choices.forEach((c)=>{
+          const local = map[c.next];
+          const isSection = !!TREE[c.next];
+          ok(!!local || isSection, `Giltig next '${c.next}' i sektion '${sec}'`);
+        });
       });
     });
+
+    // 4) Snabbt röktest: navigera till en känd kod
+    section = 'SKOG'; stack=['start'];
+    const path = ['s_barr','s_tall','s_tall_hed','res_111'];
+    path.forEach(p=>{ if (TREE[section][p]) stack.push(p); });
+    const node = TREE[section][stack[stack.length-1]];
+    ok(node && node.type==='res' && node.code==='111', 'Navigering till kod 111 fungerar');
+
     console.groupEnd();
-  }, []);
+    $testOut.innerHTML = logs.map(l=>`<div>${l}</div>`).join('');
 
-  const sectionOptions = useMemo(() => Object.keys(TREE), []);
+    // Återställ normal state efter test
+    section = 'Huvudnyckel';
+    stack = ['start'];
+  }
 
-  return (
-    <div className="min-h-screen bg-gray-50 text-gray-900">
-      <div className="max-w-5xl mx-auto p-4 sm:p-6 lg:p-8">
-        <header className="mb-6 flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold">Bestämningsnyckel – Renbetestyp</h1>
-            <a
-              className="text-sm text-teal-700 hover:underline"
-              href="https://sametinget.se/6530" target="_blank" rel="noreferrer"
-            >Källa: Sametinget, RBP renbetestyper (2017)</a>
-          </div>
-          <div className="flex gap-2">
-            <select
-              value={section}
-              onChange={(e) => reset(e.target.value)}
-              className="rounded-xl border px-3 py-2 bg-white"
-              title="Välj delnyckel"
-            >
-              {sectionOptions.map((sec) => (
-                <option key={sec} value={sec}>{sec}</option>
-              ))}
-            </select>
-            <button onClick={() => reset()} className="rounded-xl border px-3 py-2 bg-white">Återställ</button>
-          </div>
-        </header>
+  // wire buttons
+  document.getElementById('resetBtn').addEventListener('click', ()=> reset());
+  document.getElementById('backBtn').addEventListener('click', back);
+  document.getElementById('homeBtn').addEventListener('click', ()=>{ section='Huvudnyckel'; reset('Huvudnyckel'); });
 
-        <nav className="mb-4 text-sm text-gray-600 flex flex-wrap items-center gap-2">
-          <span className="px-2 py-1 bg-white rounded-lg border">{section}</span>
-          <span>•</span>
-          {stack.map((id, i) => (
-            <span key={i} className="px-2 py-1 bg-white rounded-lg border">{id}</span>
-          ))}
-        </nav>
-
-        {isQuestion(current) && <Step node={current} onChoose={go} />}
-        {isResult(current) && (
-          <div className="space-y-4">
-            <ResultCard code={current.code} />
-            <div className="flex gap-2">
-              <button onClick={back} className="rounded-xl border px-4 py-2 bg-white">Tillbaka</button>
-              <button onClick={() => reset()} className="rounded-xl border px-4 py-2 bg-white">Börja om</button>
-            </div>
-          </div>
-        )}
-
-        <footer className="mt-10 text-xs text-gray-500">
-          <p>Byggd för fältbruk. Inbyggda konsoltester bekräftar dataträdet (öppna devtools 
-            <span className="font-mono">Console</span>).</p>
-        </footer>
-      </div>
-    </div>
-  );
-}
+  // init
+  initSelect();
+  runTests();
+  render();
+  </script>
+</body>
+</html>
